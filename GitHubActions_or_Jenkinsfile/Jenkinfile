@@ -1,0 +1,27 @@
+pipeline {
+    agent any
+    stages {
+        stage('Unit Testing & Validation') {
+            steps {
+                // Ensure local Maven validation check flags return zero warnings
+                sh 'mvn clean test'
+            }
+        }
+        stage('Package Container Image') {
+            steps {
+                sh 'docker build -t production-game-engine .'
+            }
+        }
+        stage('Deploy Live Instance Environment') {
+            steps {
+                sh 'docker stop live-game || true'
+                sh 'docker rm live-game || true'
+                sh 'docker run -d -p 8080:8080 --name live-game production-game-engine'
+                
+                // Active Integration Testing Validation Check Gate
+                sleep 5
+                sh 'curl -f http://localhost:8080/api/game/status'
+            }
+        }
+    }
+}
