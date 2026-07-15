@@ -99,8 +99,22 @@
         levelRepository[3] = { grid: [[0,0,0,0,0,0],[0,2,1,1,2,0],[0,1,0,0,1,0],[0,2,1,1,2,0],[0,0,0,0,0,0]], start: [1,2], target: 4 };
         levelRepository[4] = { grid: [[0,0,0,0,0,0],[0,1,1,1,2,0],[0,0,0,0,1,0],[0,2,1,1,1,0],[0,0,0,0,0,0]], start: [1,1], target: 2 };
 
+        // Stage 6: The Recursive Staircase (Hardcoded to support staircase testing)
+        levelRepository[6] = {
+            grid: [
+                [0,0,0,0,0,0,0],
+                [0,1,1,1,1,1,0],
+                [0,1,2,1,1,1,0],
+                [0,1,1,2,1,1,0],
+                [0,0,0,0,0,0,0]
+            ],
+            start: [1, 1],
+            target: 2
+        };
+
         // --- DYNAMIC SCALING ALGORITHMIC PATTERNS FROM STAGES 5 TO 50 ---
         for (let i = 5; i <= 50; i++) {
+            if (i === 6) continue;
             let rows = 5 + Math.floor((i - 5) / 12); // up to 8 max
             let cols = 7 + Math.floor((i - 5) / 5);  // up to 16 max
             

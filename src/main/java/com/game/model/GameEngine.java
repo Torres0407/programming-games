@@ -14,8 +14,14 @@ public class GameEngine {
         LEVELS.put(3, new int[][]{{0,0,0,0,0,0},{0,2,1,1,2,0},{0,1,0,0,1,0},{0,2,1,1,2,0},{0,0,0,0,0,0}}); START_POSITIONS.put(3, new int[]{1, 2}); TARGET_STARS.put(3, 4);
         LEVELS.put(4, new int[][]{{0,0,0,0,0,0},{0,1,1,1,2,0},{0,0,0,0,1,0},{0,2,1,1,1,0},{0,0,0,0,0,0}}); START_POSITIONS.put(4, new int[]{1, 1}); TARGET_STARS.put(4, 2);
 
+        // Stage 6: The Recursive Staircase (Hardcoded to support staircase testing)
+        LEVELS.put(6, new int[][]{{0,0,0,0,0,0,0},{0,1,1,1,1,1,0},{0,1,2,1,1,1,0},{0,1,1,2,1,1,0},{0,0,0,0,0,0,0}});
+        START_POSITIONS.put(6, new int[]{1, 1});
+        TARGET_STARS.put(6, 2);
+
         // --- DYNAMIC SCALING ALGORITHMIC PATTERNS FROM STAGES 5 TO 50 ---
         for (int i = 5; i <= 50; i++) {
+            if (i == 6) continue;
             int rows = 5 + (int) Math.floor((i - 5) / 12.0); // up to 8 max
             int cols = 7 + (int) Math.floor((i - 5) / 5.0);  // up to 16 max
             
@@ -68,6 +74,19 @@ public class GameEngine {
         }
     }
 
+    private static class GridState {
+        int currentX;
+        int currentY;
+        String direction;
+        int starsCollected;
+        int target;
+        int[][] grid;
+        List<StepMetadata> pathHistory;
+        int opsCounter = 0;
+        boolean success = false;
+        String error = null;
+    }
+
     public GraphicsExecutionResponse runLevel(int levelId, List<String> mainProc, List<String> p1Proc, List<String> p2Proc) {
         if (!LEVELS.containsKey(levelId)) {
             return new GraphicsExecutionResponse(false, "Invalid Stage ID.", new ArrayList<>(), new int[0][0]);
@@ -75,72 +94,81 @@ public class GameEngine {
 
         int[][] levelGrid = deepCopyMatrix(LEVELS.get(levelId));
         int[] start = START_POSITIONS.get(levelId);
-        int currentX = start[0]; int currentY = start[1];
-        String direction = "EAST"; int starsCollected = 0; int target = TARGET_STARS.get(levelId);
+        
+        GridState state = new GridState();
+        state.currentX = start[0];
+        state.currentY = start[1];
+        state.direction = "EAST";
+        state.starsCollected = 0;
+        state.target = TARGET_STARS.get(levelId);
+        state.grid = levelGrid;
+        state.pathHistory = new ArrayList<>();
+        state.pathHistory.add(new StepMetadata(state.currentX, state.currentY, state.direction, false));
 
-        List<StepMetadata> pathHistory = new ArrayList<>();
-        pathHistory.add(new StepMetadata(currentX, currentY, direction, false));
+        execute(mainProc, p1Proc, p2Proc, state, 0);
 
-        List<String> flatInstructions = new ArrayList<>();
-        try {
-            flattenInstructions(mainProc, p1Proc, p2Proc, flatInstructions, 0);
-        } catch (StackOverflowError e) {
-            return new GraphicsExecutionResponse(false, "Runtime Stack Panic: Max Call Recursion Depth Exceeded!", pathHistory, levelGrid);
+        if (state.success) {
+            return new GraphicsExecutionResponse(true, "Result: Stage Integration Success! Tracked all " + state.starsCollected + " target loops.", state.pathHistory, state.grid);
         }
-
-        int opsCounter = 0;
-        for (String cmd : flatInstructions) {
-            opsCounter++;
-            if (opsCounter > 1000) { 
-                return new GraphicsExecutionResponse(false, "Pipeline Timeout: Infinite Execution Loop Halted.", pathHistory, levelGrid);
-            }
-
-            switch (cmd.toUpperCase()) {
-                case "FORWARD":
-                    if (direction.equals("NORTH")) currentX--;
-                    else if (direction.equals("SOUTH")) currentX++;
-                    else if (direction.equals("EAST")) currentY++;
-                    else if (direction.equals("WEST")) currentY--;
-                    break;
-                case "LEFT":
-                    direction = turnDirection(direction, -1);
-                    break;
-                case "RIGHT":
-                    direction = turnDirection(direction, 1);
-                    break;
-            }
-
-            if (currentX < 0 || currentX >= levelGrid.length || currentY < 0 || currentY >= levelGrid[0].length || levelGrid[currentX][currentY] == 0) {
-                pathHistory.add(new StepMetadata(currentX, currentY, direction, true));
-                return new GraphicsExecutionResponse(false, "Result: System Crash! Collision exception at grid elements (" + currentX + ", " + currentY + ").", pathHistory, levelGrid);
-            }
-
-            if (levelGrid[currentX][currentY] == 2) {
-                starsCollected++;
-                levelGrid[currentX][currentY] = 1;
-            }
-
-            pathHistory.add(new StepMetadata(currentX, currentY, direction, false));
+        if (state.error != null) {
+            return new GraphicsExecutionResponse(false, state.error, state.pathHistory, state.grid);
         }
-
-        if (starsCollected >= target) {
-            return new GraphicsExecutionResponse(true, "Result: Stage Integration Success! Tracked all " + starsCollected + " target loops.", pathHistory, levelGrid);
-        }
-        return new GraphicsExecutionResponse(false, "Result: Execution Interrupted: Compiled " + starsCollected + " out of " + target + " targets.", pathHistory, levelGrid);
+        return new GraphicsExecutionResponse(false, "Result: Execution Interrupted: Compiled " + state.starsCollected + " out of " + state.target + " targets.", state.pathHistory, state.grid);
     }
 
-    private void flattenInstructions(List<String> currentTokens, List<String> p1, List<String> p2, List<String> output, int depth) {
-        if (depth > 60) throw new StackOverflowError(); 
-        
-        for (String token : currentTokens) {
+    private boolean execute(List<String> tokens, List<String> p1, List<String> p2, GridState state, int depth) {
+        if (depth > 60) {
+            state.error = "Runtime Stack Panic: Max Call Recursion Depth Exceeded!";
+            return false;
+        }
+
+        for (String token : tokens) {
+            if (state.opsCounter >= 1000) {
+                state.error = "Pipeline Timeout: Infinite Execution Loop Halted.";
+                return false;
+            }
+
             if (token.equals("P1")) {
-                flattenInstructions(p1, p1, p2, output, depth + 1);
+                if (!execute(p1, p1, p2, state, depth + 1)) return false;
             } else if (token.equals("P2")) {
-                flattenInstructions(p2, p1, p2, output, depth + 1);
+                if (!execute(p2, p1, p2, state, depth + 1)) return false;
             } else {
-                output.add(token);
+                state.opsCounter++;
+                switch (token.toUpperCase()) {
+                    case "FORWARD":
+                        if (state.direction.equals("NORTH")) state.currentX--;
+                        else if (state.direction.equals("SOUTH")) state.currentX++;
+                        else if (state.direction.equals("EAST")) state.currentY++;
+                        else if (state.direction.equals("WEST")) state.currentY--;
+                        break;
+                    case "LEFT":
+                        state.direction = turnDirection(state.direction, -1);
+                        break;
+                    case "RIGHT":
+                        state.direction = turnDirection(state.direction, 1);
+                        break;
+                }
+
+                if (state.currentX < 0 || state.currentX >= state.grid.length || state.currentY < 0 || state.currentY >= state.grid[0].length || state.grid[state.currentX][state.currentY] == 0) {
+                    state.pathHistory.add(new StepMetadata(state.currentX, state.currentY, state.direction, true));
+                    state.error = "Result: System Crash! Collision exception at grid elements (" + state.currentX + ", " + state.currentY + ").";
+                    return false;
+                }
+
+                if (state.grid[state.currentX][state.currentY] == 2) {
+                    state.starsCollected++;
+                    state.grid[state.currentX][state.currentY] = 1;
+                }
+
+                state.pathHistory.add(new StepMetadata(state.currentX, state.currentY, state.direction, false));
+
+                if (state.starsCollected >= state.target) {
+                    state.success = true;
+                    return false;
+                }
             }
         }
+        return true;
     }
 
     private String turnDirection(String current, int offset) {
